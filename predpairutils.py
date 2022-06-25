@@ -497,6 +497,69 @@ def get_dms_quantiles(good_genes, dms_for, dms_rev, record, model):
             
     return qs, rand_qs
 
+def gen_mrnas_for_vienna(good_genes, record):
+    path_for_seqs = "mrna_seqs/"
+    script = open("mrna_script_for_rnaplfold", "w")
+    mrna_k2data = {}
+    k = 0
+    for item in good_genes:
+
+        seq = str(record.seq[item[0]:item[1]])
+        mrna_k2data[k] = item
+        l = str(len(seq) + 1)
+        with open(path_for_seqs + str(k) + ".fa", "w") as w:
+            w.write(">" + str(k) + "\n")
+            w.write(seq)
+        script.write("RNAplfold -o -W " + l + " -L " + l + "  −−cutoff=0.0  <" + path_for_seqs + str(k) + ".fa\n")
+        k += 1
+    script.close()
+    
+    return mrna_k2data
+
+def get_mrna_pairs_vienna(k2pairs_predicted, k2data):
+    k2best_pairs_predicted = {}
+
+    for k in k2pairs_predicted:
+        k2best_pairs_predicted[k] = set()
+        l = k2data[k][1] - k2data[k][0]
+        best_pair = [[] for _ in range(l)]
+        for pair in k2pairs_predicted[k]:
+            b, e, p = pair
+            if len(best_pair[b]) == 0 or best_pair[b][2] < p:
+                s = best_pair[b][3] if len(best_pair[b]) > 0 else 0
+                best_pair[b] = (b, e, p, p + s)
+            if len(best_pair[e]) == 0 or best_pair[e][2] < p:
+                s = best_pair[e][3] if len(best_pair[e]) > 0 else 0
+                best_pair[e] = (e, b, p, p + s)
+        for i in range(l):
+            if len(best_pair[i]) > 0: #and best_pair[i][2] > 1 - best_pair[i][3]:
+                k2best_pairs_predicted[k].add(best_pair[i][:2])
+    return k2best_pairs_predicted
+
+def get_dms_quantiles_vienna(good_genes, record, dms_for, dms_rev, k2data, k2best_pairs_predicted):
+    vienna_qs = []
+    v_rand_qs = []
+    for j, gene in enumerate(good_genes):
+        if j%100 == 0:
+            print(j)
+        if gene[1] - gene[0] > 500:
+            continue
+        seq = str(record[gene[0]:gene[1]].seq).replace("T", "U")
+        dms = get_gene_profile(gene, dms_for, dms_rev)
+
+        index = [k for k,v in k2data.items() if v == gene][0]
+        good_poss = list(set(sum(k2best_pairs_predicted[index],())))
+        rand_poss = random.sample(list(range(len(seq))), len(good_poss))
+
+        for pos in good_poss:
+            q = count_gene_quantile(dms, pos)
+            vienna_qs.append(q)
+            #print(q)
+
+        for pos2 in rand_poss:
+            q2 = count_gene_quantile(dms, pos2)
+            v_rand_qs.append(q2)
+    return vienna_qs, v_rand_qs
 
 def plot_dms(qs, rand_qs):
     f, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5), dpi = 340.0) 
